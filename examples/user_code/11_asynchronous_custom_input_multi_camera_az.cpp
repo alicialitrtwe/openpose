@@ -23,15 +23,17 @@ DEFINE_string(camera_parameter_path,    "models/cameraParameters/flir/",
 class UserInputClass
 {
 public:
-    UserInputClass(const std::string& videosPath, const std::string& cameraParameterPath) :
+    UserInputClass(const std::string& directoryPath, const std::string& cameraParameterPath):
+        mVideoFiles{op::getFilesOnDirectory(directoryPath, op::Extensions::Videos)},
         mClosed{false},
-        mFrameCounter{0ull},
-        mVideoCapture{videosPath}
+        mFrameCounter{0ull}
     {
-        if (!mVideoCapture.isOpened())
-        {
-            mClosed = true;
-            op::error("No video " + videosPath + " opened.", __LINE__, __FUNCTION__, __FILE__);
+        if (mVideoFiles.empty())
+            op::error("No video found on: " + directoryPath, __LINE__, __FUNCTION__, __FILE__);
+
+        for(const auto& mVideoFile: mVideoFiles) {
+            mVideoReaders.emplace_back(std::make_shared<op::VideoReader>(mVideoFile));
+            std::cout << mVideoFile;
         }
 
         // Create CameraParameterReader
@@ -45,24 +47,51 @@ public:
             op::opLog("Video already closed, nullptr returned.", op::Priority::High);
             return nullptr;
         }
-
-        // Read cv::Mat
-        cv::Mat cvInputData;
-        mVideoCapture >> cvInputData;
-        // If empty frame -> return nullptr
-        if (cvInputData.empty())
+        else // if (!mClosed)
         {
-            // Close program when empty frame
-            op::opLog("Empty frame detected, closing program.", op::Priority::High);
-            mClosed = true;
-            return nullptr;
+            // Camera parameters
+            const std::vector<op::Matrix> &cameraMatrices = mCameraParameterReader.getCameraMatrices();
+            const std::vector<op::Matrix> &cameraIntrinsics = mCameraParameterReader.getCameraIntrinsics();
+            const std::vector<op::Matrix> &cameraExtrinsics = mCameraParameterReader.getCameraExtrinsics();
+            const auto matrixesSize = cameraMatrices.size();
+            // More sanity checks
+            if (cameraMatrices.size() < 2)
+                op::error("There is less than 2 camera parameter matrices.",
+                          __LINE__, __FUNCTION__, __FILE__);
+            if (cameraMatrices.size() != cameraIntrinsics.size() || cameraMatrices.size() != cameraExtrinsics.size())
+                op::error("Camera parameters must have the same size.", __LINE__, __FUNCTION__, __FILE__);
+
+            // Create new datum
+            auto datumsPtr = std::make_shared<std::vector<std::shared_ptr<op::Datum>>>();
+            datumsPtr->resize(cameraMatrices.size());
+            for (auto datumIndex = 0; datumIndex < matrixesSize; ++datumIndex) {
+                auto &datumPtr = datumsPtr->at(datumIndex);
+                datumPtr = std::make_shared<op::Datum>();
+                // Fill datum
+                const auto frame = mVideoReaders[datumIndex]->getFrame();
+                datumPtr->cvInputData = frame;
+                datumPtr->frameNumber = mFrameCounter;
+                if (matrixesSize > 1) {
+                    datumPtr->subId = datumIndex;
+                    datumPtr->subIdMax = matrixesSize - 1;
+                    datumPtr->cameraMatrix = cameraMatrices[datumIndex];
+                    datumPtr->cameraExtrinsics = cameraExtrinsics[datumIndex];
+                    datumPtr->cameraIntrinsics = cameraIntrinsics[datumIndex];
+                }
+                ++mFrameCounter;
+
+                // If empty frame -> return nullptr
+                if (datumPtr->cvInputData.empty())
+                {
+                    // Close program when empty frame
+                    op::opLog("Empty frame detected, closing program.", op::Priority::High);
+                    mClosed = true;
+                    return nullptr;
+                }
+            }
+
+            return datumsPtr;
         }
-
-        // Create new datum and add 3D information (cv::Mat splitted and camera parameters)
-        auto datumsPtr = std::make_shared<std::vector<std::shared_ptr<op::Datum>>>();
-        op::createMultiviewTDatum<op::Datum>(datumsPtr, mFrameCounter, mCameraParameterReader, (void*)&cvInputData);
-
-        return datumsPtr;
     }
 
     bool isFinished() const
@@ -73,8 +102,9 @@ public:
 private:
     bool mClosed;
     unsigned long long mFrameCounter;
-    cv::VideoCapture mVideoCapture;
     op::CameraParameterReader mCameraParameterReader;
+    std::vector<std::string> mVideoFiles;
+    std::vector<std::shared_ptr<op::VideoReader>> mVideoReaders;
 };
 
 void configureWrapper(op::Wrapper& opWrapper)

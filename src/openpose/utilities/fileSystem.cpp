@@ -408,6 +408,12 @@ namespace op
                     "jpg", "jpeg", "png"};
                 return getFilesOnDirectory(directoryPath, extensionNames);
             }
+            if (extensions == Extensions::Videos)
+            {
+                const std::vector<std::string> extensionNames{
+                        "mp4"};
+                return getFilesOnDirectory(directoryPath, extensionNames);
+            }
             // Unknown kind of extensions
             else
             {

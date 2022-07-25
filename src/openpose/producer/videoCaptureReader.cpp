@@ -106,7 +106,8 @@ namespace op
             cv::Mat frame;
             upImpl->mVideoCapture >> frame;
             // Skip frames if frame step > 1
-            const auto frameStep = Producer::get(ProducerProperty::FrameStep);
+            // Alicia: const auto frameStep = Producer::get(ProducerProperty::FrameStep);
+            double frameStep = 1;
             if (frameStep > 1 && !frame.empty() && get(CV_CAP_PROP_POS_FRAMES) < get(CV_CAP_PROP_FRAME_COUNT)-1)
             {
                 // Close if end of video

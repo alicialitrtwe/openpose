@@ -149,7 +149,7 @@ namespace op
                             " might be wrong. Note: If you have introduced your own camera intrinsics, are they an"
                             " upper triangular matrix (as specified in the OpenPose doc/advanced/calibration_module.md"
                             " and doc/advanced/3d_reconstruction_module.md)?", Priority::High);
-                    // opLog("Reprojection error: " + std::to_string(reprojectionErrorTotal)); // To debug reprojection error
+                    opLog("Reprojection error: " + std::to_string(reprojectionErrorTotal)); // To debug reprojection error
                     return atLeastOnePointProjected;
                 }
                 return false;

@@ -31,7 +31,8 @@ namespace op
     enum class Extensions : unsigned char
     {
         Images, // jpg, png, ...
-        Size
+        Videos,
+        Size,
     };
 }
 
