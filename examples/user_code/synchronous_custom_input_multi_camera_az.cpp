@@ -1,7 +1,7 @@
-// ------------------------- OpenPose C++ API Tutorial - Example 13 - Custom Input -------------------------
-// Synchronous mode: ideal for production integration. It provides the fastest results with respect to runtime
-// performance.
-// In this function, the user can implement its own way to create frames (e.g., reading his own folder of images).
+// ------------------------- OpenPose C++ API Tutorial - Example 10 - Custom Input -------------------------
+// Asynchronous mode: ideal for fast prototyping when performance is not an issue.
+// In this function, the user can implement its own way to create frames (e.g., reading his own folder of images)
+// and emplaces/pushes the frames to OpenPose.
 
 // Third-party dependencies
 #include <opencv2/opencv.hpp>
@@ -13,21 +13,30 @@
 
 // Custom OpenPose flags
 // Producer
-DEFINE_string(image_dir,                "examples/media/",
-    "Process a directory of images. Read all standard formats (jpg, png, bmp, etc.).");
+DEFINE_string(video,                "3d_4camera_video.avi",
+    "Use a video file instead of the camera. Use `examples/media/video.avi` for our default example video.");
+DEFINE_string(camera_parameter_path,    "models/cameraParameters/flir/",
+    "String with the folder where the camera parameters are located. If there is only 1 XML file (for single"
+    " video, webcam, or images from the same camera), you must specify the whole XML file path (ending in .xml).");
 
 // This worker will just read and return all the basic image file formats in a directory
 class WUserInput : public op::WorkerProducer<std::shared_ptr<std::vector<std::shared_ptr<op::Datum>>>>
 {
 public:
-    WUserInput(const std::string& directoryPath) :
-        mImageFiles{op::getFilesOnDirectory(directoryPath, op::Extensions::Images)}, // For all basic image formats
-        // If we want only e.g., "jpg" + "png" images
-        // mImageFiles{op::getFilesOnDirectory(directoryPath, std::vector<std::string>{"jpg", "png"})},
-        mCounter{0}
+    WUserInput(const std::string& directoryPath, const std::string& cameraParameterPath):
+        mVideoFiles{op::getFilesOnDirectory(directoryPath, op::Extensions::Videos)},
+        mFrameCounter{0ull}
     {
-        if (mImageFiles.empty())
-            op::error("No images found on: " + directoryPath, __LINE__, __FUNCTION__, __FILE__);
+        if (mVideoFiles.empty())
+            op::error("No video found on: " + directoryPath, __LINE__, __FUNCTION__, __FILE__);
+
+        for(const auto& mVideoFile: mVideoFiles) {
+            mVideoReaders.emplace_back(std::make_shared<op::VideoReader>(mVideoFile));
+            std::cout << mVideoFile;
+        }
+
+        // Create CameraParameterReader
+        mCameraParameterReader.readParameters(cameraParameterPath);
     }
 
     void initializationOnThread() {}
@@ -36,40 +45,60 @@ public:
     {
         try
         {
-            // Close program when empty frame
-            if (mImageFiles.size() <= mCounter)
+//            if True:
+//            {
+//                op::opLog("Video already closed, nullptr returned.", op::Priority::High);
+//                this->stop();
+//                return nullptr;
+//            }
+//            if True:
             {
-                op::opLog("Last frame read and added to queue. Closing program after it is processed.",
-                        op::Priority::High);
-                // This function stops this worker, which will eventually stop the whole thread system once all the
-                // frames have been processed
-                this->stop();
-                return nullptr;
-            }
-            else
-            {
+                // Camera parameters
+                const std::vector<op::Matrix> &cameraMatrices = mCameraParameterReader.getCameraMatrices();
+                const std::vector<op::Matrix> &cameraIntrinsics = mCameraParameterReader.getCameraIntrinsics();
+                const std::vector<op::Matrix> &cameraExtrinsics = mCameraParameterReader.getCameraExtrinsics();
+                const auto matrixesSize = cameraMatrices.size();
+                // More sanity checks
+                if (cameraMatrices.size() < 2)
+                    op::error("There is less than 2 camera parameter matrices.",
+                              __LINE__, __FUNCTION__, __FILE__);
+                if (cameraMatrices.size() != cameraIntrinsics.size() || cameraMatrices.size() != cameraExtrinsics.size())
+                    op::error("Camera parameters must have the same size.", __LINE__, __FUNCTION__, __FILE__);
+
                 // Create new datum
                 auto datumsPtr = std::make_shared<std::vector<std::shared_ptr<op::Datum>>>();
-                datumsPtr->emplace_back();
-                auto& datumPtr = datumsPtr->at(0);
-                datumPtr = std::make_shared<op::Datum>();
+                datumsPtr->resize(cameraMatrices.size());
+                for (auto datumIndex = 0; datumIndex < matrixesSize; ++datumIndex) {
+                    auto &datumPtr = datumsPtr->at(datumIndex);
+                    datumPtr = std::make_shared<op::Datum>();
+                    // Fill datum
+                    const auto frame = mVideoReaders[datumIndex]->getFrame();
+                    datumPtr->cvInputData = frame;
+                    datumPtr->frameNumber = mFrameCounter;
+                    if (matrixesSize > 1) {
+                        datumPtr->subId = datumIndex;
+                        datumPtr->subIdMax = matrixesSize - 1;
+                        datumPtr->cameraMatrix = cameraMatrices[datumIndex];
+                        datumPtr->cameraExtrinsics = cameraExtrinsics[datumIndex];
+                        datumPtr->cameraIntrinsics = cameraIntrinsics[datumIndex];
+                    }
+                    ++mFrameCounter;
 
-                // Fill datum
-                const cv::Mat cvInputData = cv::imread(mImageFiles.at(mCounter++));
-                datumPtr->cvInputData = OP_CV2OPCONSTMAT(cvInputData);
-
-                // If empty frame -> return nullptr
-                if (datumPtr->cvInputData.empty())
-                {
-                    op::opLog("Empty frame detected on path: " + mImageFiles.at(mCounter-1) + ". Closing program.",
-                        op::Priority::High);
-                    this->stop();
-                    datumsPtr = nullptr;
+                    // If empty frame -> return nullptr
+                    if (datumPtr->cvInputData.empty())
+                    {
+                        // Close program when empty frame
+                        op::opLog("Empty frame detected, closing program.", op::Priority::High);
+                        this->stop();
+                        return nullptr;
+                    }
                 }
 
                 return datumsPtr;
             }
+
         }
+
         catch (const std::exception& e)
         {
             this->stop();
@@ -78,9 +107,13 @@ public:
         }
     }
 
+
+
 private:
-    const std::vector<std::string> mImageFiles;
-    unsigned long long mCounter;
+    unsigned long long mFrameCounter;
+    op::CameraParameterReader mCameraParameterReader;
+    std::vector<std::string> mVideoFiles;
+    std::vector<std::shared_ptr<op::VideoReader>> mVideoReaders;
 };
 
 void configureWrapper(op::Wrapper& opWrapper)
@@ -121,8 +154,7 @@ void configureWrapper(op::Wrapper& opWrapper)
                                                       FLAGS_heatmaps_add_PAFs);
         const auto heatMapScaleMode = op::flagsToHeatMapScaleMode(FLAGS_heatmaps_scale);
         // >1 camera view?
-        // const auto multipleView = (FLAGS_3d || FLAGS_3d_views > 1 || FLAGS_flir_camera);
-        const auto multipleView = false;
+        const auto multipleView = (FLAGS_3d || FLAGS_3d_views > 1);
         // Face and hand detectors
         const auto faceDetector = op::flagsToDetector(FLAGS_face_detector);
         const auto handDetector = op::flagsToDetector(FLAGS_hand_detector);
@@ -131,7 +163,7 @@ void configureWrapper(op::Wrapper& opWrapper)
 
         // Initializing the user custom classes
         // Frames producer (e.g., video, webcam, ...)
-        auto wUserInput = std::make_shared<WUserInput>(FLAGS_image_dir);
+        auto wUserInput = std::make_shared<WUserInput>(FLAGS_video, FLAGS_camera_parameter_path);
         // Add custom processing
         const auto workerInputOnNewThread = true;
         opWrapper.setWorker(op::WorkerType::Input, wUserInput, workerInputOnNewThread);
@@ -192,6 +224,13 @@ int tutorialApiCpp()
     {
         op::opLog("Starting OpenPose demo...", op::Priority::High);
         const auto opTimer = op::getTimerInit();
+
+        // Required flags to enable 3-D
+        FLAGS_3d = true;
+        FLAGS_number_people_max = 1;
+        FLAGS_3d_min_views = 3;
+        FLAGS_output_resolution = "320x256"; // Optional, but otherwise it gets too big to render in real time
+        // FLAGS_3d_views = X; // Not required because it only affects OpenPose producers (rather than custom ones)
 
         // OpenPose wrapper
         op::opLog("Configuring OpenPose...", op::Priority::High);
