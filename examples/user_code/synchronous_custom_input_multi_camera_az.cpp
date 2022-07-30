@@ -13,7 +13,7 @@
 
 // Custom OpenPose flags
 // Producer
-DEFINE_string(video,                "3d_4camera_video.avi",
+DEFINE_string(video_dir,                "video_path/",
     "Use a video file instead of the camera. Use `examples/media/video.avi` for our default example video.");
 DEFINE_string(camera_parameter_path,    "models/cameraParameters/flir/",
     "String with the folder where the camera parameters are located. If there is only 1 XML file (for single"
@@ -45,7 +45,7 @@ public:
     {
         try
         {
-            std::lock_guard<std::mutex> g(lock);
+            // std::lock_guard<std::mutex> g(lock);
             if (mQueuedElements.empty())
             {
                 // Camera parameters
@@ -63,7 +63,7 @@ public:
                 for (auto datumIndex = 0; datumIndex < matrixesSize; ++datumIndex)
                 {
                     // Create new datum
-                    op::opLog(datumIndex);
+                    // op::opLog(datumIndex);
                     auto datumsPtr = std::make_shared<std::vector<std::shared_ptr<op::Datum>>>();
                     datumsPtr->emplace_back();
                     auto& datumPtr = datumsPtr->back();
@@ -169,7 +169,7 @@ void configureWrapper(op::Wrapper& opWrapper)
 
         // Initializing the user custom classes
         // Frames producer (e.g., video, webcam, ...)
-        auto wUserInput = std::make_shared<WUserInput>(FLAGS_video, FLAGS_camera_parameter_path);
+        auto wUserInput = std::make_shared<WUserInput>(FLAGS_video_dir, FLAGS_camera_parameter_path);
         // Add custom processing
         const auto workerInputOnNewThread = true;
         opWrapper.setWorker(op::WorkerType::Input, wUserInput, workerInputOnNewThread);
