@@ -45,13 +45,8 @@ public:
     {
         try
         {
-//            if True:
-//            {
-//                op::opLog("Video already closed, nullptr returned.", op::Priority::High);
-//                this->stop();
-//                return nullptr;
-//            }
-//            if True:
+            std::lock_guard<std::mutex> g(lock);
+            if (mQueuedElements.empty())
             {
                 // Camera parameters
                 const std::vector<op::Matrix> &cameraMatrices = mCameraParameterReader.getCameraMatrices();
@@ -65,12 +60,17 @@ public:
                 if (cameraMatrices.size() != cameraIntrinsics.size() || cameraMatrices.size() != cameraExtrinsics.size())
                     op::error("Camera parameters must have the same size.", __LINE__, __FUNCTION__, __FILE__);
 
-                // Create new datum
-                auto datumsPtr = std::make_shared<std::vector<std::shared_ptr<op::Datum>>>();
-                datumsPtr->resize(cameraMatrices.size());
-                for (auto datumIndex = 0; datumIndex < matrixesSize; ++datumIndex) {
-                    auto &datumPtr = datumsPtr->at(datumIndex);
+                for (auto datumIndex = 0; datumIndex < matrixesSize; ++datumIndex)
+                {
+                    // Create new datum
+                    op::opLog(datumIndex);
+                    auto datumsPtr = std::make_shared<std::vector<std::shared_ptr<op::Datum>>>();
+                    datumsPtr->emplace_back();
+                    auto& datumPtr = datumsPtr->back();
                     datumPtr = std::make_shared<op::Datum>();
+
+                    //auto &datumPtr = datumsPtr->at(datumIndex);
+                    //datumPtr = std::make_shared<op::Datum>();
                     // Fill datum
                     const auto frame = mVideoReaders[datumIndex]->getFrame();
                     datumPtr->cvInputData = frame;
@@ -82,8 +82,6 @@ public:
                         datumPtr->cameraExtrinsics = cameraExtrinsics[datumIndex];
                         datumPtr->cameraIntrinsics = cameraIntrinsics[datumIndex];
                     }
-                    ++mFrameCounter;
-
                     // If empty frame -> return nullptr
                     if (datumPtr->cvInputData.empty())
                     {
@@ -92,10 +90,16 @@ public:
                         this->stop();
                         return nullptr;
                     }
-                }
 
-                return datumsPtr;
+                    mQueuedElements.push(datumsPtr);
+                }
+                ++mFrameCounter;
             }
+
+            auto Datums = mQueuedElements.front();
+            mQueuedElements.pop();
+            // Return result
+            return Datums;
 
         }
 
@@ -114,6 +118,8 @@ private:
     op::CameraParameterReader mCameraParameterReader;
     std::vector<std::string> mVideoFiles;
     std::vector<std::shared_ptr<op::VideoReader>> mVideoReaders;
+    std::queue<std::shared_ptr<std::vector<std::shared_ptr<op::Datum>>>> mQueuedElements;
+    std::mutex lock;
 };
 
 void configureWrapper(op::Wrapper& opWrapper)
