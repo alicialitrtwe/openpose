@@ -827,10 +827,10 @@ namespace op
             {
                 opLog("", Priority::Low, __LINE__, __FUNCTION__, __FILE__);
                 // Sanity checks
-                if (!oPProducer)
-                    error("Video file can only be recorded inside `wrapper/wrapper.hpp` if the producer"
-                          " is one of the default ones (e.g., video, webcam, ...).",
-                          __LINE__, __FUNCTION__, __FILE__);
+//                if (!oPProducer)
+//                    error("Video file can only be recorded inside `wrapper/wrapper.hpp` if the producer"
+//                          " is one of the default ones (e.g., video, webcam, ...).",
+//                          __LINE__, __FUNCTION__, __FILE__);
                 if (wrapperStructOutput.writeVideoWithAudio && producerSharedPtr->getType() != ProducerType::Video)
                     error("Audio can only be added to the output saved video if the input is also a video (either"
                           " disable `--write_video_with_audio` or use a video as input with `--video`).",
