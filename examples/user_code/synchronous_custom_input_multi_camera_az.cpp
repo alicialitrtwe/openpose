@@ -1,7 +1,4 @@
-// ------------------------- OpenPose C++ API Tutorial - Example 10 - Custom Input -------------------------
-// Asynchronous mode: ideal for fast prototyping when performance is not an issue.
-// In this function, the user can implement its own way to create frames (e.g., reading his own folder of images)
-// and emplaces/pushes the frames to OpenPose.
+// synchronous mode for video directory
 
 // Third-party dependencies
 #include <opencv2/opencv.hpp>

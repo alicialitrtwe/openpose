@@ -2,7 +2,6 @@
  set(USER_CODE_FILES
      10_asynchronous_custom_input_az.cpp
      11_asynchronous_custom_input_multi_camera_az.cpp
-     openpose_az.cpp
      synchronous_custom_input_multi_camera_az.cpp)
 
 foreach(USER_CODE_FILE ${USER_CODE_FILES})
